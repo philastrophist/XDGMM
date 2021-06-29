@@ -21,6 +21,11 @@ from sklearn.base import BaseEstimator
 from astroML.density_estimation import XDGMM as astroML_XDGMM
 from astroML.utils import logsumexp
 
+
+class StandardError(Exception):
+    pass
+
+
 class XDGMM(BaseEstimator):
     """Extreme Deconvolution
 
@@ -72,7 +77,7 @@ class XDGMM(BaseEstimator):
     This class extends the BaseEstimator class from scikit-learn and
         implements the necessary methods for cross-validation.
     """
-    
+
     def __init__(self, n_components=1, n_iter=0, tol=1E-5,
                  method='astroML', labels = None, random_state = None, 
                  V=None, mu=None, weights=None, filename=None, w=0.):
@@ -109,7 +114,10 @@ class XDGMM(BaseEstimator):
             self.GMM.V=V
             self.GMM.alpha=weights
 
-    def fit(self, X, Xerr):
+    def __repr__(self):
+        return f"<XDGMM - K={self.n_components} D={self.mu.shape[1]} (n_iter={self.n_iter}, tol={self.tol})>"
+
+    def fit(self, X, Xerr, assignments=None):
         """Fit the XD model to data
         
         Whichever method is specified in self.method will be used.
@@ -131,6 +139,8 @@ class XDGMM(BaseEstimator):
             X = X.values
         
         if self.method=='astroML':
+            if assignments is not None:
+                raise ValueError(f"Only method='Bovy' can handle assignments")
             self.GMM.n_components=self.n_components
             self.GMM.n_iter=self.n_iter
             self.GMM.fit(X, Xerr)
@@ -161,7 +171,7 @@ class XDGMM(BaseEstimator):
             self.V = tmp_gmm.covariances_
             
             logl=bovyXD(X,Xerr,self.weights,self.mu,self.V,
-                        tol=self.tol,maxiter=self.n_iter,w=self.w)
+                        tol=self.tol,maxiter=self.n_iter,w=self.w, assignments=assignments)
             self.GMM.V = self.V
             self.GMM.mu = self.mu
             self.GMM.alpha = self.weights
@@ -413,13 +423,16 @@ class XDGMM(BaseEstimator):
         bics = np.array([])
         lowest_bic = np.infty
         optimal_n_comp = 0
-        if no_err: Xerr_zero = np.zeros(Xerr.shape)
+        if no_err:
+            Xerr_zero = np.zeros(Xerr.shape)
         for n_components in param_range:
             self.n_components = n_components
             self.fit(X, Xerr)
-            if no_err: bics = np.append(bics, self.bic(X, Xerr_zero))
-            else: bics = np.append(bics, self.bic(X, Xerr))
-            print "N =",n_components,", BIC =",bics[-1]
+            if no_err:
+                bics = np.append(bics, self.bic(X, Xerr_zero))
+            else:
+                bics = np.append(bics, self.bic(X, Xerr))
+            print("N =",n_components,", BIC =",bics[-1])
             if bics[-1] < lowest_bic:
                 optimal_n_comp = n_components
                 lowest_bic = bics[-1]
@@ -488,7 +501,7 @@ class XDGMM(BaseEstimator):
                 aics = np.append(aics, self.aic(X, Xerr_zero))
             else:
                 aics = np.append(aics, self.aic(X, Xerr))
-            print "N =", n_components, ", AIC =", aics[-1]
+            print("N =", n_components, ", AIC =", aics[-1])
             if aics[-1] < lowest_aic:
                 optimal_n_comp = n_components
                 lowest_aic = aics[-1]
